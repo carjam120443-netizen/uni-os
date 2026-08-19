@@ -26,11 +26,22 @@ make distclean
 # Empty answers select defaults. BusyBox does not provide Linux-kbuild's
 # olddefconfig target, so do not invoke it here.
 yes '' | make defconfig
+
+# Ubuntu 24.04's newer kernel headers can expose APIs that BusyBox's optional
+# traffic-control applet does not build against cleanly. The TC applet is not
+# needed for the Uni-OS bootstrap, so keep it disabled in the CI build.
+sed -i \
+    -e 's/^CONFIG_TC=y/# CONFIG_TC is not set/' \
+    -e 's/^CONFIG_SHA1_HWACCEL=y/# CONFIG_SHA1_HWACCEL is not set/' \
+    -e 's/^CONFIG_SHA256_HWACCEL=y/# CONFIG_SHA256_HWACCEL is not set/' \
+    .config
+
 if grep -q '^# CONFIG_STATIC is not set' .config 2>/dev/null; then
     sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
 elif ! grep -q '^CONFIG_STATIC=' .config 2>/dev/null; then
     printf '%s\n' 'CONFIG_STATIC=y' >> .config
 fi
+
 make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" V=1
 make CONFIG_PREFIX="$ROOTFS" install
 
@@ -86,6 +97,8 @@ fetch "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.
 tar -xf "linux-${KERNEL_VERSION}.tar.xz"
 cd "linux-${KERNEL_VERSION}"
 make defconfig
+# Build the kernel's host-side helper scripts before invoking scripts/config.
+make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" scripts
 scripts/config --enable CONFIG_DEVTMPFS
 scripts/config --enable CONFIG_DEVTMPFS_MOUNT
 scripts/config --enable CONFIG_BLK_DEV_INITRD
