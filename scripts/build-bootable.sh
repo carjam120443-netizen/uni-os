@@ -17,15 +17,15 @@ fetch() {
     curl -fL --retry 3 --retry-delay 2 "$url" -o "$dest"
 }
 
-# Build BusyBox as a self-contained static userspace.
+# Build BusyBox non-interactively as a self-contained static userspace.
 echo "==> Downloading BusyBox $BUSYBOX_VERSION"
 fetch "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" "$WORK/busybox.tar.bz2"
 tar -xf "$WORK/busybox.tar.bz2" -C "$WORK"
 cd "$WORK/busybox-${BUSYBOX_VERSION}"
 make distclean
-make defconfig
-# Do not edit .config with sed: use BusyBox's configuration tool so this also
-# works when the option is absent rather than commented out.
+# BusyBox defconfig can prompt when the host compiler sees newly introduced
+# options. Feed blank answers so CI always accepts the defaults.
+yes '' | make defconfig
 ./scripts/config --enable CONFIG_STATIC
 make olddefconfig
 make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" V=1
