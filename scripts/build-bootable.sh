@@ -17,15 +17,18 @@ fetch() {
     curl -fL --retry 3 --retry-delay 2 "$url" -o "$dest"
 }
 
+# Build BusyBox as a self-contained static userspace.
 echo "==> Downloading BusyBox $BUSYBOX_VERSION"
 fetch "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" "$WORK/busybox.tar.bz2"
 tar -xf "$WORK/busybox.tar.bz2" -C "$WORK"
 cd "$WORK/busybox-${BUSYBOX_VERSION}"
 make distclean
 make defconfig
-# Build a statically linked BusyBox so the initramfs has no external libc dependency.
-sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+# Do not edit .config with sed: use BusyBox's configuration tool so this also
+# works when the option is absent rather than commented out.
+./scripts/config --enable CONFIG_STATIC
+make olddefconfig
+make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" V=1
 make CONFIG_PREFIX="$ROOTFS" install
 
 cd "$ROOT_DIR"
@@ -68,23 +71,20 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
-
 hostname uni-os 2>/dev/null || true
 
 echo
 cat /etc/motd
 echo
-
 echo "Type 'pkg info' or 'pkg update' to test the package manager."
 exec /bin/sh
 EOF
 chmod +x "$ROOTFS/init"
 
-# Use the repository's bootstrap package manager and sudo implementation.
 install -m 0755 "$ROOT_DIR/cmd/pkg" "$ROOTFS/usr/bin/pkg"
 install -m 0755 "$ROOT_DIR/cmd/sudo" "$ROOTFS/usr/bin/sudo"
 
-# Minimal kernel config suitable for QEMU and VirtualBox.
+# Linux kernel with storage, ISO, networking, and VirtualBox/QEMU drivers.
 echo "==> Downloading Linux $KERNEL_VERSION"
 cd "$WORK"
 fetch "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz" "linux-${KERNEL_VERSION}.tar.xz"
@@ -124,5 +124,4 @@ menuentry "Uni-OS Linux" {
 EOF
 
 grub-mkrescue -o "$OUT/uni-os-vbox.iso" "$OUT/iso"
-
 echo "==> Built: $OUT/uni-os-vbox.iso"
