@@ -1,6 +1,6 @@
-.PHONY: all build base initramfs clean
+.PHONY: all build base initramfs bootable clean
 
-all: build
+all: bootable
 
 build:
 	./scripts/build.sh
@@ -10,6 +10,9 @@ base:
 
 initramfs: base
 	./scripts/make-initramfs.sh
+
+bootable:
+	./scripts/build-bootable.sh
 
 clean:
 	rm -rf out/ rootfs/ build/
