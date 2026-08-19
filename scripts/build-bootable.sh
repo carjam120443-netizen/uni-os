@@ -1,0 +1,128 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+OUT="$ROOT_DIR/out"
+ROOTFS="$OUT/rootfs"
+WORK="$OUT/work"
+BUSYBOX_VERSION="1.37.0"
+KERNEL_VERSION="6.12.41"
+
+rm -rf "$OUT"
+mkdir -p "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,etc,dev,proc,sys,run,tmp,var/lib/pkg,home,root,boot}
+mkdir -p "$WORK"
+
+fetch() {
+    url="$1"; dest="$2"
+    curl -fL --retry 3 --retry-delay 2 "$url" -o "$dest"
+}
+
+echo "==> Downloading BusyBox $BUSYBOX_VERSION"
+fetch "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2" "$WORK/busybox.tar.bz2"
+tar -xf "$WORK/busybox.tar.bz2" -C "$WORK"
+cd "$WORK/busybox-${BUSYBOX_VERSION}"
+make distclean
+make defconfig
+# Build a statically linked BusyBox so the initramfs has no external libc dependency.
+sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+make CONFIG_PREFIX="$ROOTFS" install
+
+cd "$ROOT_DIR"
+cat > "$ROOTFS/etc/os-release" <<'EOF'
+NAME="Uni-OS"
+ID=uni-os
+ID_LIKE="linux"
+PRETTY_NAME="Uni-OS Linux"
+VERSION="0.1-bootstrap"
+VERSION_ID="0.1"
+HOME_URL="https://github.com/carjam120443-netizen/uni-os"
+EOF
+
+cat > "$ROOTFS/etc/hostname" <<'EOF'
+uni-os
+EOF
+
+cat > "$ROOTFS/etc/motd" <<'EOF'
+Welcome to Uni-OS Linux!
+BusyBox userspace + pkg bootstrap
+EOF
+
+cat > "$ROOTFS/etc/passwd" <<'EOF'
+root:x:0:0:root:/root:/bin/sh
+EOF
+cat > "$ROOTFS/etc/group" <<'EOF'
+root:x:0:
+wheel:x:10:root
+EOF
+
+cat > "$ROOTFS/etc/profile" <<'EOF'
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root
+export PS1='[uni-os]\\$ '
+EOF
+
+cat > "$ROOTFS/init" <<'EOF'
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+
+hostname uni-os 2>/dev/null || true
+
+echo
+cat /etc/motd
+echo
+
+echo "Type 'pkg info' or 'pkg update' to test the package manager."
+exec /bin/sh
+EOF
+chmod +x "$ROOTFS/init"
+
+# Use the repository's bootstrap package manager and sudo implementation.
+install -m 0755 "$ROOT_DIR/cmd/pkg" "$ROOTFS/usr/bin/pkg"
+install -m 0755 "$ROOT_DIR/cmd/sudo" "$ROOTFS/usr/bin/sudo"
+
+# Minimal kernel config suitable for QEMU and VirtualBox.
+echo "==> Downloading Linux $KERNEL_VERSION"
+cd "$WORK"
+fetch "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz" "linux-${KERNEL_VERSION}.tar.xz"
+tar -xf "linux-${KERNEL_VERSION}.tar.xz"
+cd "linux-${KERNEL_VERSION}"
+make defconfig
+scripts/config --enable CONFIG_DEVTMPFS
+scripts/config --enable CONFIG_DEVTMPFS_MOUNT
+scripts/config --enable CONFIG_BLK_DEV_INITRD
+scripts/config --enable CONFIG_ISO9660_FS
+scripts/config --enable CONFIG_EXT4_FS
+scripts/config --enable CONFIG_VIRTIO_PCI
+scripts/config --enable CONFIG_VIRTIO_BLK
+scripts/config --enable CONFIG_SCSI_LOWLEVEL
+scripts/config --enable CONFIG_ATA
+scripts/config --enable CONFIG_ATA_PIIX
+scripts/config --enable CONFIG_E1000
+scripts/config --enable CONFIG_E1000E
+make olddefconfig
+make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" bzImage
+cp arch/x86/boot/bzImage "$ROOTFS/boot/vmlinuz"
+
+cd "$ROOTFS"
+find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9 > "$OUT/initramfs.img"
+
+mkdir -p "$OUT/iso/boot/grub"
+cp "$ROOTFS/boot/vmlinuz" "$OUT/iso/boot/vmlinuz"
+cp "$OUT/initramfs.img" "$OUT/iso/boot/initramfs.img"
+cat > "$OUT/iso/boot/grub/grub.cfg" <<'EOF'
+set timeout=3
+set default=0
+
+menuentry "Uni-OS Linux" {
+    linux /boot/vmlinuz console=tty0
+    initrd /boot/initramfs.img
+}
+EOF
+
+grub-mkrescue -o "$OUT/uni-os-vbox.iso" "$OUT/iso"
+
+echo "==> Built: $OUT/uni-os-vbox.iso"
