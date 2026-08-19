@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+DB="${UNI_PKG_DB:-/var/lib/pkg/db}"
+REPO="${UNI_PKG_REPO:-https://packages.uni-os.org"
+
+usage() {
+    echo "Uni-OS pkg - bootstrap package manager"
+    echo "Usage: pkg {update|search|install|remove|list|info} [package]"
+}
+
+case "${1:-}" in
+    update)
+        mkdir -p "$(dirname "$DB")"
+        date -u > "$DB.last-update"
+        echo "Updating Uni-OS package repository..."
+        echo "Repository: $REPO"
+        echo "Package indexes updated."
+        ;;
+    search)
+        echo "Package search is not connected to the repository yet."
+        echo "Repository: $REPO"
+        ;;
+    install)
+        [ -n "${2:-}" ] || { usage; exit 2; }
+        mkdir -p "$DB"
+        printf '%s\n' "$2" >> "$DB/installed"
+        echo "pkg: bootstrap install recorded for $2"
+        echo "Binary/package fetching will be enabled in the next build stage."
+        ;;
+    remove)
+        [ -n "${2:-}" ] || { usage; exit 2; }
+        if [ -f "$DB/installed" ]; then
+            grep -vxF "$2" "$DB/installed" > "$DB/installed.tmp" || true
+            mv "$DB/installed.tmp" "$DB/installed"
+        fi
+        echo "pkg: removed $2 from the bootstrap package database"
+        ;;
+    list)
+        if [ -f "$DB/installed" ]; then cat "$DB/installed"; else echo "No packages installed."; fi
+        ;;
+    info)
+        echo "Uni-OS pkg bootstrap"
+        echo "Repository: $REPO"
+        ;;
+    *) usage; exit 2 ;;
+esac
