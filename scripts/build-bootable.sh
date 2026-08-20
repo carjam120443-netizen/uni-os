@@ -9,7 +9,24 @@ BUSYBOX_VERSION="1.37.0"
 KERNEL_VERSION="6.12.41"
 
 rm -rf "$OUT"
-mkdir -p "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,etc,dev,proc,sys,run,tmp,var/lib/pkg,home,root,boot}
+# /bin/sh on Ubuntu runners is dash, which does not perform Bash-style brace
+# expansion. Create every rootfs directory explicitly so later redirections
+# such as /etc/os-release always have a parent directory.
+mkdir -p \
+    "$ROOTFS/bin" \
+    "$ROOTFS/sbin" \
+    "$ROOTFS/usr/bin" \
+    "$ROOTFS/usr/sbin" \
+    "$ROOTFS/etc" \
+    "$ROOTFS/dev" \
+    "$ROOTFS/proc" \
+    "$ROOTFS/sys" \
+    "$ROOTFS/run" \
+    "$ROOTFS/tmp" \
+    "$ROOTFS/var/lib/pkg" \
+    "$ROOTFS/home" \
+    "$ROOTFS/root" \
+    "$ROOTFS/boot"
 mkdir -p "$WORK"
 
 fetch() {
