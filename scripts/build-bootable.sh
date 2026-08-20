@@ -115,7 +115,7 @@ tar -xf "linux-${KERNEL_VERSION}.tar.xz"
 cd "linux-${KERNEL_VERSION}"
 make defconfig
 # Build the kernel's host-side helper scripts before invoking scripts/config.
-make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" scripts
+make -j2 scripts
 scripts/config --enable CONFIG_DEVTMPFS
 scripts/config --enable CONFIG_DEVTMPFS_MOUNT
 scripts/config --enable CONFIG_BLK_DEV_INITRD
@@ -129,7 +129,9 @@ scripts/config --enable CONFIG_ATA_PIIX
 scripts/config --enable CONFIG_E1000
 scripts/config --enable CONFIG_E1000E
 make olddefconfig
-make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" bzImage
+# Keep CI resource usage predictable and enable verbose output so the exact
+# failing compiler/linker command is visible if the kernel build fails.
+make -j2 V=1 bzImage
 cp arch/x86/boot/bzImage "$ROOTFS/boot/vmlinuz"
 
 cd "$ROOTFS"
